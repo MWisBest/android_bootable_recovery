@@ -67,6 +67,9 @@ endif
 ifeq ($(HAVE_SELINUX), true)
 LOCAL_CFLAGS += -DHAVE_SELINUX
 endif
+ifneq ($(DEBUG_FORCE_STRICT_ALIASING),true)
+	LOCAL_CFLAGS += -fno-strict-aliasing
+endif
 
 ifeq ($(DEVICE_RESOLUTION),)
 $(warning ********************************************************************************)
