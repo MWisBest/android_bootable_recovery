@@ -38,13 +38,16 @@
 #include "twrpDigest.hpp"
 #include "twrpDU.hpp"
 
+extern "C" {
+	#include "cutils/properties.h"
+}
+
 #ifdef TW_INCLUDE_CRYPTO
 	#ifdef TW_INCLUDE_JB_CRYPTO
 		#include "crypto/jb/cryptfs.h"
 	#else
 		#include "crypto/ics/cryptfs.h"
 	#endif
-	#include "cutils/properties.h"
 #endif
 
 TWPartitionManager::TWPartitionManager(void) {
@@ -1470,9 +1473,8 @@ int TWPartitionManager::Decrypt_Device(string Password) {
 			if (dat->Mount(false) && TWFunc::Path_Exists("/data/media/0")) {
 				dat->Storage_Path = "/data/media/0";
 				dat->Symlink_Path = dat->Storage_Path;
-				DataManager::SetValue(TW_INTERNAL_PATH, "/data/media/0");
+				DataManager::SetValue("tw_storage_path", "/data/media/0");
 				dat->UnMount(false);
-				DataManager::SetBackupFolder();
 				Output_Partition(dat);
 			}
 #endif
@@ -1520,6 +1522,7 @@ int TWPartitionManager::Open_Lun_File(string Partition_Path, string Lun_File) {
 		LOGERR("Unable to write to ums lunfile '%s': (%s)\n", Lun_File.c_str(), strerror(errno));
 		return false;
 	}
+	property_set("sys.storage.ums_enabled", "1");
 	return true;
 }
 
@@ -1580,6 +1583,7 @@ int TWPartitionManager::usb_storage_disable(void) {
 	Mount_All_Storage();
 	Update_System_Details();
 	UnMount_Main_Partitions();
+	property_set("sys.storage.ums_enabled", "0");
 	if (ret < 0 && index == 0) {
 		LOGERR("Unable to write to ums lunfile '%s'.", lun_file);
 		return false;
