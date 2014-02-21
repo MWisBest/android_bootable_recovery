@@ -55,7 +55,7 @@ extern "C" {
 
 int GUIFileSelector::mSortOrder = 0;
 
-GUIFileSelector::GUIFileSelector(xml_node<>* node)
+GUIFileSelector::GUIFileSelector(xml_node<>* node) : GUIObject(node)
 {
 	xml_attribute<>* attr;
 	xml_node<>* child;
@@ -392,6 +392,9 @@ GUIFileSelector::~GUIFileSelector()
 
 int GUIFileSelector::Render(void)
 {
+	if(!isConditionTrue())
+		return 0;
+
 	// First step, fill background
 	gr_color(mBackgroundColor.red, mBackgroundColor.green, mBackgroundColor.blue, 255);
 	gr_fill(mRenderX, mRenderY + mHeaderH, mRenderW, mRenderH - mHeaderH);
@@ -577,6 +580,9 @@ int GUIFileSelector::Render(void)
 
 int GUIFileSelector::Update(void)
 {
+	if(!isConditionTrue())
+		return 0;
+
 	if (!mHeaderIsStatic) {
 		std::string newValue = gui_parse_text(mHeaderText);
 		if (mLastValue != newValue) {
@@ -659,7 +665,10 @@ int GUIFileSelector::GetSelection(int x, int y)
 
 int GUIFileSelector::NotifyTouch(TOUCH_STATE state, int x, int y)
 {
-	static int lastY = 0, last2Y = 0;
+	if(!isConditionTrue())
+		return -1;
+
+	static int lastY = 0, last2Y = 0, fastScroll = 0;
 	int selection = 0;
 
 	switch (state)
@@ -674,6 +683,9 @@ int GUIFileSelector::NotifyTouch(TOUCH_STATE state, int x, int y)
 			mUpdate = 1;
 		startY = lastY = last2Y = y;
 		scrollingSpeed = 0;
+
+		if(mFastScrollRectX != -1 && x >= mRenderX + mRenderW - mFastScrollW)
+			fastScroll = 1;
 		break;
 	case TOUCH_DRAG:
 		// Check if we dragged out of the selection window
@@ -687,7 +699,7 @@ int GUIFileSelector::NotifyTouch(TOUCH_STATE state, int x, int y)
 		}
 
 		// Fast scroll
-		if(mFastScrollRectX != -1 && x >= mRenderX + mRenderW - mFastScrollW)
+		if(fastScroll)
 		{
 			int pct = ((y-mRenderY-mHeaderH)*100)/(mRenderH-mHeaderH);
 			int totalSize = (mShowFolders ? mFolderList.size() : 0) + (mShowFiles ? mFileList.size() : 0);
@@ -761,6 +773,7 @@ int GUIFileSelector::NotifyTouch(TOUCH_STATE state, int x, int y)
 
 	case TOUCH_RELEASE:
 		isHighlighted = false;
+		fastScroll = 0;
 		if (startSelection >= 0)
 		{
 			// We've selected an item!
@@ -779,6 +792,8 @@ int GUIFileSelector::NotifyTouch(TOUCH_STATE state, int x, int y)
 
 			if (startSelection < folderSize + fileSize)
 			{
+				DataManager::Vibrate("tw_button_vibrate");
+
 				if (startSelection < folderSize)
 				{
 					std::string oldcwd;
@@ -850,8 +865,13 @@ int GUIFileSelector::NotifyTouch(TOUCH_STATE state, int x, int y)
 	return 0;
 }
 
-int GUIFileSelector::NotifyVarChange(std::string varName, std::string value)
+int GUIFileSelector::NotifyVarChange(const std::string& varName, const std::string& value)
 {
+	GUIObject::NotifyVarChange(varName, value);
+
+	if(!isConditionTrue())
+		return 0;
+
 	if (varName.empty()) {
 		// Always clear the data variable so we know to use it
 		DataManager::SetValue(mVariable, "");

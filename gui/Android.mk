@@ -15,14 +15,15 @@ LOCAL_SRC_FILES := \
     fileselector.cpp \
     progressbar.cpp \
     animation.cpp \
-    conditional.cpp \
+    object.cpp \
     slider.cpp \
     slidervalue.cpp \
     listbox.cpp \
     keyboard.cpp \
     input.cpp \
     blanktimer.cpp \
-    partitionlist.cpp
+    partitionlist.cpp \
+    mousecursor.cpp
 
 ifneq ($(TWRP_CUSTOM_KEYBOARD),)
   LOCAL_SRC_FILES += $(TWRP_CUSTOM_KEYBOARD)

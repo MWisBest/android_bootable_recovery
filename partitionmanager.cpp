@@ -96,6 +96,9 @@ int TWPartitionManager::Process_Fstab(string Fstab_Filename, bool Display_Error)
 		for (iter = Partitions.begin(); iter != Partitions.end(); iter++) {
 			if ((*iter)->Is_Storage) {
 				(*iter)->Is_Settings_Storage = true;
+#ifndef RECOVERY_SDCARD_ON_DATA
+				(*iter)->Setup_AndSec();
+#endif
 				Found_Settings_Storage = true;
 				DataManager::SetValue("tw_settings_path", (*iter)->Storage_Path);
 				DataManager::SetValue("tw_storage_path", (*iter)->Storage_Path);
@@ -1826,7 +1829,7 @@ void TWPartitionManager::Get_Partition_List(string ListType, std::vector<Partiti
 			while (end_pos != string::npos && start_pos < Restore_List.size()) {
 				restore_path = Restore_List.substr(start_pos, end_pos - start_pos);
 				if ((restore_part = Find_Partition_By_Path(restore_path)) != NULL) {
-					if (restore_part->Backup_Name == "recovery" || restore_part->Is_SubPartition) {
+					if (restore_part->Backup_Name == "recovery" && !restore_part->Can_Be_Backed_Up || restore_part->Is_SubPartition) {
 						// Don't allow restore of recovery (causes problems on some devices)
 						// Don't add subpartitions to the list of items
 					} else {

@@ -15,6 +15,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include "../data.hpp"
 
 #include <string>
 
@@ -26,7 +27,7 @@ extern "C" {
 #include "rapidxml.hpp"
 #include "objects.hpp"
 
-GUISlider::GUISlider(xml_node<>* node)
+GUISlider::GUISlider(xml_node<>* node) : GUIObject(node)
 {
 	xml_attribute<>* attr;
 	xml_node<>* child;
@@ -92,6 +93,9 @@ GUISlider::~GUISlider()
 
 int GUISlider::Render(void)
 {
+	if(!isConditionTrue())
+		return 0;
+
 	if (!sSlider || !sSlider->GetResource())
 		return -1;
 
@@ -112,6 +116,9 @@ int GUISlider::Render(void)
 
 int GUISlider::Update(void)
 {
+	if(!isConditionTrue())
+		return 0;
+
 	if (sUpdate)
 		return 2;
 	return 0;
@@ -119,6 +126,9 @@ int GUISlider::Update(void)
 
 int GUISlider::NotifyTouch(TOUCH_STATE state, int x, int y)
 {
+	if(!isConditionTrue())
+		return -1;
+
 	static bool dragging = false;
 
 	switch (state)
@@ -156,8 +166,10 @@ int GUISlider::NotifyTouch(TOUCH_STATE state, int x, int y)
 		if (!dragging)
 			return 0;
 
-		if (sCurTouchX >= mRenderX + mRenderW - sTouchW)
+		if (sCurTouchX >= mRenderX + mRenderW - sTouchW) {
+			DataManager::Vibrate("tw_button_vibrate");
 			sAction->doActions();
+		}
 
 		sCurTouchX = mRenderX;
 		dragging = false;

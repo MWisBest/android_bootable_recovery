@@ -57,6 +57,9 @@ extern "C"
 #include "blanktimer.hpp"
 #endif
 
+// Enable to print render time of each frame to the log file
+//#define PRINT_RENDER_TIME 1
+
 const static int CURTAIN_FADE = 32;
 
 using namespace rapidxml;
@@ -186,6 +189,7 @@ static void * input_thread(void *cookie)
 	static struct timeval touchStart;
 	HardwareKeyboard kb;
 	string seconds;
+	MouseCursor *cursor = PageManager::GetMouseCursor();
 
 #ifndef TW_NO_SCREEN_TIMEOUT
 	//start screen timeout threads
@@ -329,7 +333,47 @@ static void * input_thread(void *cookie)
 #ifdef _EVENT_LOGGING
 			LOGERR("TOUCH_KEY: %d\n", ev.code);
 #endif
-			if (ev.value != 0)
+			// Left mouse button
+			if(ev.code == BTN_LEFT)
+			{
+				if(ev.value == 1)
+				{
+					cursor->GetPos(x, y);
+
+					if (PageManager::NotifyTouch(TOUCH_START, x, y) > 0)
+						state = 1;
+					drag = 1;
+					touch_and_hold = 1;
+					dontwait = 1;
+					key_repeat = 0;
+					gettimeofday(&touchStart, NULL);
+				}
+				else if(drag == 1)
+				{
+					if (state == 0)
+					{
+						cursor->GetPos(x, y);
+
+						PageManager::NotifyTouch(TOUCH_RELEASE, x, y);
+
+						touch_and_hold = 0;
+						touch_repeat = 0;
+						if (!key_repeat)
+							dontwait = 0;
+					}
+					state = 0;
+					drag = 0;
+				}
+			}
+			// side mouse button, often used for "back" function
+			else if(ev.code == BTN_SIDE)
+			{
+				if(ev.value == 1)
+					kb.KeyDown(KEY_BACK);
+				else
+					kb.KeyUp(KEY_BACK);
+			}
+			else if (ev.value != 0)
 			{
 				// This is a key press
 				if (kb.KeyDown(ev.code))
@@ -367,6 +411,26 @@ static void * input_thread(void *cookie)
 #endif
 			}
 		}
+		else if(ev.type == EV_REL)
+		{
+#ifdef _EVENT_LOGGING
+			LOGERR("EV_REL %d %d\n", ev.code, ev.value);
+#endif
+			if(ev.code == REL_X)
+				cursor->Move(ev.value, 0);
+			else if(ev.code == REL_Y)
+				cursor->Move(0, ev.value);
+
+			if(drag == 1) {
+				cursor->GetPos(x, y);
+#ifdef _EVENT_LOGGING
+				LOGERR("TOUCH_DRAG: %d, %d\n", x, y);
+#endif
+				if (PageManager::NotifyTouch(TOUCH_DRAG, x, y) > 0)
+					state = 1;
+				key_repeat = 0;
+			}
+        }
 	}
 	return NULL;
 }
@@ -423,6 +487,11 @@ static int runPages(void)
 
 	DataManager::SetValue("tw_loaded", 1);
 
+#ifdef PRINT_RENDER_TIME
+	timespec start, end;
+	int32_t render_t, flip_t;
+#endif
+
 	for (;;)
 	{
 		loopTimer();
@@ -432,11 +501,30 @@ static int runPages(void)
 			int ret;
 
 			ret = PageManager::Update();
+
+#ifndef PRINT_RENDER_TIME
 			if (ret > 1)
 				PageManager::Render();
 
 			if (ret > 0)
 				flip();
+#else
+			if (ret > 1)
+			{
+				clock_gettime(CLOCK_MONOTONIC, &start);
+				PageManager::Render();
+				clock_gettime(CLOCK_MONOTONIC, &end);
+				render_t = TWFunc::timespec_diff_ms(start, end);
+
+				flip();
+				clock_gettime(CLOCK_MONOTONIC, &start);
+				flip_t = TWFunc::timespec_diff_ms(end, start);
+
+				LOGINFO("Render(): %u ms, flip(): %u ms, total: %u ms\n", render_t, flip_t, render_t+flip_t);
+			}
+			else if(ret == 1)
+				flip();
+#endif
 		}
 		else
 		{

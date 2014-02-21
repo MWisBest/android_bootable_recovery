@@ -54,6 +54,7 @@ extern blanktimer blankTimer;
 std::map<std::string, PageSet*> PageManager::mPageSets;
 PageSet* PageManager::mCurrentSet;
 PageSet* PageManager::mBaseSet = NULL;
+MouseCursor *PageManager::mMouseCursor = NULL;
 
 // Helper routine to convert a string to a color declaration
 int ConvertStrToColor(std::string str, COLOR* color)
@@ -192,6 +193,12 @@ Page::Page(xml_node<>* page, xml_node<>* templates /* = NULL */)
 	return;
 }
 
+Page::~Page()
+{
+	for (std::vector<GUIObject*>::iterator itr = mObjects.begin(); itr != mObjects.end(); ++itr)
+		delete *itr;
+}
+
 bool Page::ProcessNode(xml_node<>* page, xml_node<>* templates /* = NULL */, int depth /* = 0 */)
 {
 	if (depth == 10)
@@ -224,86 +231,101 @@ bool Page::ProcessNode(xml_node<>* page, xml_node<>* templates /* = NULL */, int
 		if (type == "text")
 		{
 			GUIText* element = new GUIText(child);
+			mObjects.push_back(element);
 			mRenders.push_back(element);
 			mActions.push_back(element);
 		}
 		else if (type == "image")
 		{
 			GUIImage* element = new GUIImage(child);
+			mObjects.push_back(element);
 			mRenders.push_back(element);
 		}
 		else if (type == "fill")
 		{
 			GUIFill* element = new GUIFill(child);
+			mObjects.push_back(element);
 			mRenders.push_back(element);
 		}
 		else if (type == "action")
 		{
 			GUIAction* element = new GUIAction(child);
+			mObjects.push_back(element);
 			mActions.push_back(element);
 		}
 		else if (type == "console")
 		{
 			GUIConsole* element = new GUIConsole(child);
+			mObjects.push_back(element);
 			mRenders.push_back(element);
 			mActions.push_back(element);
 		}
 		else if (type == "button")
 		{
 			GUIButton* element = new GUIButton(child);
+			mObjects.push_back(element);
 			mRenders.push_back(element);
 			mActions.push_back(element);
 		}
 		else if (type == "checkbox")
 		{
 			GUICheckbox* element = new GUICheckbox(child);
+			mObjects.push_back(element);
 			mRenders.push_back(element);
 			mActions.push_back(element);
 		}
 		else if (type == "fileselector")
 		{
 			GUIFileSelector* element = new GUIFileSelector(child);
+			mObjects.push_back(element);
 			mRenders.push_back(element);
 			mActions.push_back(element);
 		}
 		else if (type == "animation")
 		{
 			GUIAnimation* element = new GUIAnimation(child);
+			mObjects.push_back(element);
 			mRenders.push_back(element);
 		}
 		else if (type == "progressbar")
 		{
 			GUIProgressBar* element = new GUIProgressBar(child);
+			mObjects.push_back(element);
 			mRenders.push_back(element);
 			mActions.push_back(element);
 		}
 		else if (type == "slider")
 		{
 			GUISlider* element = new GUISlider(child);
+			mObjects.push_back(element);
 			mRenders.push_back(element);
 			mActions.push_back(element);
 		}
 		else if (type == "slidervalue")
 		{
 			GUISliderValue *element = new GUISliderValue(child);
+			mObjects.push_back(element);
 			mRenders.push_back(element);
 			mActions.push_back(element);
 		}
 		else if (type == "listbox")
 		{
 			GUIListBox* element = new GUIListBox(child);
+			mObjects.push_back(element);
 			mRenders.push_back(element);
 			mActions.push_back(element);
 		}
 		else if (type == "keyboard")
 		{
 			GUIKeyboard* element = new GUIKeyboard(child);
+			mObjects.push_back(element);
 			mRenders.push_back(element);
 			mActions.push_back(element);
 		}
 		else if (type == "input")
 		{
 			GUIInput* element = new GUIInput(child);
+			mObjects.push_back(element);
 			mRenders.push_back(element);
 			mActions.push_back(element);
 			mInputs.push_back(element);
@@ -311,6 +333,7 @@ bool Page::ProcessNode(xml_node<>* page, xml_node<>* templates /* = NULL */, int
 		else if (type == "partitionlist")
 		{
 			GUIPartitionList* element = new GUIPartitionList(child);
+			mObjects.push_back(element);
 			mRenders.push_back(element);
 			mActions.push_back(element);
 		}
@@ -496,13 +519,8 @@ void Page::SetPageFocus(int inFocus)
 
 int Page::NotifyVarChange(std::string varName, std::string value)
 {
-	std::vector<ActionObject*>::iterator iter;
-
-	// Don't try to handle a lack of handlers
-	if (mActions.size() == 0)
-		return 1;
-
-	for (iter = mActions.begin(); iter != mActions.end(); ++iter)
+	std::vector<GUIObject*>::iterator iter;
+	for (iter = mObjects.begin(); iter != mObjects.end(); ++iter)
 	{
 		if ((*iter)->NotifyVarChange(varName, value))
 			LOGERR("An action handler errored on NotifyVarChange.\n");
@@ -525,6 +543,9 @@ PageSet::PageSet(char* xmlFile)
 
 PageSet::~PageSet()
 {
+	for (std::vector<Page*>::iterator itr = mPages.begin(); itr != mPages.end(); ++itr)
+		delete *itr;
+
 	delete mResources;
 	free(mXmlFile);
 }
@@ -549,6 +570,11 @@ int PageSet::Load(ZipArchive* package)
 	child = parent->first_node("variables");
 	if (child)
 		LoadVariables(child);
+
+	LOGINFO("Loading mouse cursor...\n");
+	child = parent->first_node("mousecursor");
+	if(child)
+		PageManager::LoadCursorData(child);
 
 	LOGINFO("Loading pages...\n");
 	// This may be NULL if no templates are present
@@ -834,7 +860,10 @@ PageSet* PageManager::SelectPackage(std::string name)
 
 	tmp = FindPackage(name);
 	if (tmp)
+	{
 		mCurrentSet = tmp;
+		mCurrentSet->NotifyVarChange("", "");
+	}
 	else
 		LOGERR("Unable to find package.\n");
 
@@ -849,6 +878,9 @@ int PageManager::ReloadPackage(std::string name, std::string package)
 	if (iter == mPageSets.end())
 		return -1;
 
+	if(mMouseCursor)
+		mMouseCursor->ResetData(gr_fb_width(), gr_fb_height());
+
 	PageSet* set = (*iter).second;
 	mPageSets.erase(iter);
 
@@ -860,6 +892,8 @@ int PageManager::ReloadPackage(std::string name, std::string package)
 	}
 	if (mCurrentSet == set)
 		SelectPackage(name);
+	if (mBaseSet == set)
+		mBaseSet = mCurrentSet;
 	delete set;
 	return 0;
 }
@@ -924,7 +958,25 @@ int PageManager::IsCurrentPage(Page* page)
 
 int PageManager::Render(void)
 {
-	return (mCurrentSet ? mCurrentSet->Render() : -1);
+	int res = (mCurrentSet ? mCurrentSet->Render() : -1);
+	if(mMouseCursor)
+		mMouseCursor->Render();
+	return res;
+}
+
+MouseCursor *PageManager::GetMouseCursor()
+{
+	if(!mMouseCursor)
+		mMouseCursor = new MouseCursor(gr_fb_width(), gr_fb_height());
+	return mMouseCursor;
+}
+
+void PageManager::LoadCursorData(xml_node<>* node)
+{
+	if(!mMouseCursor)
+		mMouseCursor = new MouseCursor(gr_fb_width(), gr_fb_height());
+
+	mMouseCursor->LoadData(node);
 }
 
 int PageManager::Update(void)
@@ -933,7 +985,16 @@ int PageManager::Update(void)
 	if(blankTimer.IsScreenOff())
 		return 0;
 #endif
-	return (mCurrentSet ? mCurrentSet->Update() : -1);
+
+	int res = (mCurrentSet ? mCurrentSet->Update() : -1);
+
+	if(mMouseCursor)
+	{
+		int c_res = mMouseCursor->Update();
+		if(c_res > res)
+			res = c_res;
+	}
+	return res;
 }
 
 int PageManager::NotifyTouch(TOUCH_STATE state, int x, int y)

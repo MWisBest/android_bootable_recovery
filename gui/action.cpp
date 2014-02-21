@@ -67,7 +67,7 @@ extern blanktimer blankTimer;
 void curtainClose(void);
 
 GUIAction::GUIAction(xml_node<>* node)
-	: Conditional(node)
+	: GUIObject(node)
 {
 	xml_node<>* child;
 	xml_node<>* actions;
@@ -144,16 +144,13 @@ int GUIAction::NotifyKey(int key)
 	return 0;
 }
 
-int GUIAction::NotifyVarChange(std::string varName, std::string value)
+int GUIAction::NotifyVarChange(const std::string& varName, const std::string& value)
 {
+	GUIObject::NotifyVarChange(varName, value);
+
 	if (varName.empty() && !isConditionValid() && !mKey && !mActionW)
 		doActions();
-
-	// This handles notifying the condition system of page start
-	if (varName.empty() && isConditionValid())
-		NotifyPageSet();
-
-	if ((varName.empty() || IsConditionVariable(varName)) && isConditionValid() && isConditionTrue())
+	else if((varName.empty() || IsConditionVariable(varName)) && isConditionValid() && isConditionTrue())
 		doActions();
 
 	return 0;
@@ -314,6 +311,7 @@ void* GUIAction::thread_start(void *cookie)
 
 void GUIAction::operation_start(const string operation_name)
 {
+	time(&Start);
 	DataManager::SetValue(TW_ACTION_BUSY, 1);
 	DataManager::SetValue("ui_progress", 0);
 	DataManager::SetValue("tw_operation", operation_name);
@@ -323,6 +321,7 @@ void GUIAction::operation_start(const string operation_name)
 
 void GUIAction::operation_end(const int operation_status, const int simulate)
 {
+	time_t Stop;
 	int simulate_fail;
 	DataManager::SetValue("ui_progress", 100);
 	if (simulate) {
@@ -344,6 +343,9 @@ void GUIAction::operation_end(const int operation_status, const int simulate)
 #ifndef TW_NO_SCREEN_TIMEOUT
 	blankTimer.resetTimerAndUnblank();
 #endif
+	time(&Stop);
+	if ((int) difftime(Stop, Start) > 10)
+		DataManager::Vibrate("tw_action_vibrate");
 }
 
 int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
@@ -920,6 +922,7 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 					else {
 						operation_end(1, simulate);
 						return -1;
+
 					}
 					DataManager::SetValue(TW_BACKUP_NAME, "(Auto Generate)");
 				} else if (arg == "restore") {

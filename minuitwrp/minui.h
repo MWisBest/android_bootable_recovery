@@ -58,6 +58,7 @@ struct input_event;
 int ev_init(void);
 void ev_exit(void);
 int ev_get(struct input_event *ev, unsigned dont_wait);
+int ev_has_mouse(void);
 
 // Resources
 
@@ -69,5 +70,7 @@ void res_free_surface(gr_surface surface);
 int ev_wait(int timeout);
 void ev_dispatch(void);
 int ev_get_input(int fd, short revents, struct input_event *ev);
+
+int vibrate(int timeout_ms);
 
 #endif

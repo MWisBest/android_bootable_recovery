@@ -45,8 +45,10 @@ using namespace rapidxml;
 int fixPermissions::restorecon(string entry, struct stat *sb) {
 	char *oldcontext, *newcontext;
 	struct selabel_handle *sehandle;
-
-	sehandle = selinux_android_file_context_handle();
+	struct selinux_opt selinux_options[] = {
+		{ SELABEL_OPT_PATH, "/file_contexts" }
+	};
+	sehandle = selabel_open(SELABEL_CTX_FILE, selinux_options, 1);
 	if (lgetfilecon(entry.c_str(), &oldcontext) < 0) {
 		LOGINFO("Couldn't get selinux context for %s\n", entry.c_str());
 		return -1;
@@ -72,18 +74,48 @@ int fixPermissions::fixDataDataContexts(void) {
 	struct selinux_opt selinux_options[] = {
 		{ SELABEL_OPT_PATH, "/file_contexts" }
 	};
+
 	selinux_handle = selabel_open(SELABEL_CTX_FILE, selinux_options, 1);
+
 	if (!selinux_handle)
 		printf("No file contexts for SELinux\n");
 	else
 		printf("SELinux contexts loaded from /file_contexts\n");
+
 	d = opendir("/data/data");
+
 	while (( de = readdir(d)) != NULL) {
 		stat(de->d_name, &sb);
 		string f = "/data/data/";
 		f = f + de->d_name;
 		restorecon(f, &sb);
 	}
+	closedir(d);
+	return 0;
+}
+
+int fixPermissions::fixDataInternalContexts(void) {
+	DIR *d;
+	struct dirent *de;
+	struct stat sb;
+	string dir;
+
+	if (TWFunc::Path_Exists("/data/media")) {
+		dir = "/data/media";
+	}
+	else {
+		dir = "/data/media/0";
+	}
+	LOGINFO("Fixing %s contexts\n", dir.c_str());
+	d = opendir(dir.c_str());
+
+	while (( de = readdir(d)) != NULL) {
+		stat(de->d_name, &sb);
+		string f;
+		f = dir + de->d_name;
+		restorecon(f, &sb);
+	}
+	closedir(d);
 	return 0;
 }
 #endif
@@ -171,8 +203,9 @@ int fixPermissions::fixPerms(bool enable_debug, bool remove_data_for_missing_app
 		}
 	}
 	#ifdef HAVE_SELINUX
-	gui_print("Fixing /data/data contexts.\n");
+	gui_print("Fixing /data/data/ contexts.\n");
 	fixDataDataContexts();
+	fixDataInternalContexts();
 	#endif
 	gui_print("Done fixing permissions.\n");
 	return 0;

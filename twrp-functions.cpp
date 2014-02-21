@@ -18,7 +18,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include <string>
 #include <unistd.h>
 #include <vector>
 #include <dirent.h>
@@ -32,18 +32,20 @@
 #include <sys/vfs.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#ifdef ANDROID_RB_POWEROFF
-	#include "cutils/android_reboot.h"
-#endif
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include "twrp-functions.hpp"
-#include "partitions.hpp"
 #include "twcommon.h"
+#ifndef BUILD_TWRPTAR_MAIN
 #include "data.hpp"
+#include "partitions.hpp"
 #include "variables.h"
 #include "bootloader.h"
+#ifdef ANDROID_RB_POWEROFF
+	#include "cutils/android_reboot.h"
+#endif
+#endif // ndef BUILD_TWRPTAR_MAIN
 #ifndef TW_EXCLUDE_ENCRYPTED_BACKUPS
 	#include "openaes/inc/oaes_lib.h"
 #endif
@@ -114,6 +116,165 @@ string TWFunc::Get_Path(string Path) {
 	} else
 		return Path;
 }
+
+int TWFunc::Wait_For_Child(pid_t pid, int *status, string Child_Name) {
+	pid_t rc_pid;
+
+	rc_pid = waitpid(pid, status, 0);
+	if (rc_pid > 0) {
+		if (WEXITSTATUS(*status) == 0)
+			LOGINFO("%s process ended with RC=%d\n", Child_Name.c_str(), WEXITSTATUS(*status)); // Success
+		else if (WIFSIGNALED(*status)) {
+			LOGINFO("%s process ended with signal: %d\n", Child_Name.c_str(), WTERMSIG(*status)); // Seg fault or some other non-graceful termination
+			return -1;
+		} else if (WEXITSTATUS(*status) != 0) {
+			LOGINFO("%s process ended with ERROR=%d\n", Child_Name.c_str(), WEXITSTATUS(*status)); // Graceful exit, but there was an error
+			return -1;
+		}
+	} else { // no PID returned
+		if (errno == ECHILD)
+			LOGINFO("%s no child process exist\n", Child_Name.c_str());
+		else {
+			LOGINFO("%s Unexpected error\n", Child_Name.c_str());
+			return -1;
+		}
+	}
+	return 0;
+}
+
+bool TWFunc::Path_Exists(string Path) {
+	// Check to see if the Path exists
+	struct stat st;
+	if (stat(Path.c_str(), &st) != 0)
+		return false;
+	else
+		return true;
+}
+
+int TWFunc::Get_File_Type(string fn) {
+	string::size_type i = 0;
+	int firstbyte = 0, secondbyte = 0;
+	char header[3];
+
+	ifstream f;
+	f.open(fn.c_str(), ios::in | ios::binary);
+	f.get(header, 3);
+	f.close();
+	firstbyte = header[i] & 0xff;
+	secondbyte = header[++i] & 0xff;
+
+	if (firstbyte == 0x1f && secondbyte == 0x8b)
+		return 1; // Compressed
+	else if (firstbyte == 0x4f && secondbyte == 0x41)
+		return 2; // Encrypted
+	else
+		return 0; // Unknown
+
+	return 0;
+}
+
+int TWFunc::Try_Decrypting_File(string fn, string password) {
+#ifndef TW_EXCLUDE_ENCRYPTED_BACKUPS
+	OAES_CTX * ctx = NULL;
+	uint8_t _key_data[32] = "";
+	FILE *f;
+	uint8_t buffer[4096];
+	uint8_t *buffer_out = NULL;
+	uint8_t *ptr = NULL;
+	size_t read_len = 0, out_len = 0;
+	int firstbyte = 0, secondbyte = 0, key_len;
+	size_t _j = 0;
+	size_t _key_data_len = 0;
+
+	// mostly kanged from OpenAES oaes.c
+	for( _j = 0; _j < 32; _j++ )
+		_key_data[_j] = _j + 1;
+	_key_data_len = password.size();
+	if( 16 >= _key_data_len )
+		_key_data_len = 16;
+	else if( 24 >= _key_data_len )
+		_key_data_len = 24;
+	else
+	_key_data_len = 32;
+	memcpy(_key_data, password.c_str(), password.size());
+
+	ctx = oaes_alloc();
+	if (ctx == NULL) {
+		LOGERR("Failed to allocate OAES\n");
+		return -1;
+	}
+
+	oaes_key_import_data(ctx, _key_data, _key_data_len);
+
+	f = fopen(fn.c_str(), "rb");
+	if (f == NULL) {
+		LOGERR("Failed to open '%s' to try decrypt\n", fn.c_str());
+		return -1;
+	}
+	read_len = fread(buffer, sizeof(uint8_t), 4096, f);
+	if (read_len <= 0) {
+		LOGERR("Read size during try decrypt failed\n");
+		fclose(f);
+		return -1;
+	}
+	if (oaes_decrypt(ctx, buffer, read_len, NULL, &out_len) != OAES_RET_SUCCESS) {
+		LOGERR("Error: Failed to retrieve required buffer size for trying decryption.\n");
+		fclose(f);
+		return -1;
+	}
+	buffer_out = (uint8_t *) calloc(out_len, sizeof(char));
+	if (buffer_out == NULL) {
+		LOGERR("Failed to allocate output buffer for try decrypt.\n");
+		fclose(f);
+		return -1;
+	}
+	if (oaes_decrypt(ctx, buffer, read_len, buffer_out, &out_len) != OAES_RET_SUCCESS) {
+		LOGERR("Failed to decrypt file '%s'\n", fn.c_str());
+		fclose(f);
+		free(buffer_out);
+		return 0;
+	}
+	fclose(f);
+	if (out_len < 2) {
+		LOGINFO("Successfully decrypted '%s' but read length %i too small.\n", fn.c_str(), out_len);
+		free(buffer_out);
+		return 1; // Decrypted successfully
+	}
+	ptr = buffer_out;
+	firstbyte = *ptr & 0xff;
+	ptr++;
+	secondbyte = *ptr & 0xff;
+	if (firstbyte == 0x1f && secondbyte == 0x8b) {
+		LOGINFO("Successfully decrypted '%s' and file is compressed.\n", fn.c_str());
+		free(buffer_out);
+		return 3; // Compressed
+	}
+	if (out_len >= 262) {
+		ptr = buffer_out + 257;
+		if (strncmp((char*)ptr, "ustar", 5) == 0) {
+			LOGINFO("Successfully decrypted '%s' and file is tar format.\n", fn.c_str());
+			free(buffer_out);
+			return 2; // Tar
+		}
+	}
+	free(buffer_out);
+	LOGINFO("No errors decrypting '%s' but no known file format.\n", fn.c_str());
+	return 1; // Decrypted successfully
+#else
+	LOGERR("Encrypted backup support not included.\n");
+	return -1;
+#endif
+}
+
+unsigned long TWFunc::Get_File_Size(string Path) {
+	struct stat st;
+
+	if (stat(Path.c_str(), &st) != 0)
+		return 0;
+	return st.st_size;
+}
+
+#ifndef BUILD_TWRPTAR_MAIN
 
 // Returns "/path" from a full /path/to/file.name
 string TWFunc::Get_Root_Path(string Path) {
@@ -206,15 +367,6 @@ int TWFunc::Recursive_Mkdir(string Path) {
 	return true;
 }
 
-bool TWFunc::Path_Exists(string Path) {
-	// Check to see if the Path exists
-	struct stat st;
-	if (stat(Path.c_str(), &st) != 0)
-		return false;
-	else
-		return true;
-}
-
 void TWFunc::GUI_Operation_Text(string Read_Value, string Default_Text) {
 	string Display_Text;
 
@@ -235,14 +387,6 @@ void TWFunc::GUI_Operation_Text(string Read_Value, string Partition_Name, string
 
 	DataManager::SetValue("tw_operation", Display_Text);
 	DataManager::SetValue("tw_partition", Partition_Name);
-}
-
-unsigned long TWFunc::Get_File_Size(string Path) {
-	struct stat st;
-
-	if (stat(Path.c_str(), &st) != 0)
-		return 0;
-	return st.st_size;
 }
 
 void TWFunc::Copy_Log(string Source, string Destination) {
@@ -478,30 +622,6 @@ int TWFunc::write_file(string fn, string& line) {
 	return -1;
 }
 
-vector<string> TWFunc::split_string(const string &in, char del, bool skip_empty) {
-	vector<string> res;
-
-	if (in.empty() || del == '\0')
-		return res;
-
-	string field;
-	istringstream f(in);
-	if (del == '\n') {
-		while(getline(f, field)) {
-			if (field.empty() && skip_empty)
-				continue;
-			res.push_back(field);
-		}
-	} else {
-		while(getline(f, field, del)) {
-			if (field.empty() && skip_empty)
-				continue;
-			res.push_back(field);
-		}
-	}
-	return res;
-}
-
 timespec TWFunc::timespec_diff(timespec& start, timespec& end)
 {
 	timespec temp;
@@ -513,6 +633,12 @@ timespec TWFunc::timespec_diff(timespec& start, timespec& end)
 		temp.tv_nsec = end.tv_nsec-start.tv_nsec;
 	}
 	return temp;
+}
+
+int32_t TWFunc::timespec_diff_ms(timespec& start, timespec& end)
+{
+	return ((end.tv_sec * 1000) + end.tv_nsec/1000000) -
+			((start.tv_sec * 1000) + start.tv_nsec/1000000);
 }
 
 int TWFunc::drop_caches(void) {
@@ -553,13 +679,21 @@ bool TWFunc::Fix_su_Perms(void) {
 	if (!PartitionManager.Mount_By_Path("/system", true))
 		return false;
 
+	string propvalue = System_Property_Get("ro.build.version.sdk");
+	string su_perms = "6755";
+	if (!propvalue.empty()) {
+		int sdk_version = atoi(propvalue.c_str());
+		if (sdk_version >= 18)
+			su_perms = "0755";
+	}
+
 	string file = "/system/bin/su";
 	if (TWFunc::Path_Exists(file)) {
 		if (chown(file.c_str(), 0, 0) != 0) {
 			LOGERR("Failed to chown '%s'\n", file.c_str());
 			return false;
 		}
-		if (tw_chmod(file, "6755") != 0) {
+		if (tw_chmod(file, su_perms) != 0) {
 			LOGERR("Failed to chmod '%s'\n", file.c_str());
 			return false;
 		}
@@ -570,7 +704,7 @@ bool TWFunc::Fix_su_Perms(void) {
 			LOGERR("Failed to chown '%s'\n", file.c_str());
 			return false;
 		}
-		if (tw_chmod(file, "6755") != 0) {
+		if (tw_chmod(file, su_perms) != 0) {
 			LOGERR("Failed to chmod '%s'\n", file.c_str());
 			return false;
 		}
@@ -581,7 +715,7 @@ bool TWFunc::Fix_su_Perms(void) {
 			LOGERR("Failed to chown '%s'\n", file.c_str());
 			return false;
 		}
-		if (tw_chmod(file, "6755") != 0) {
+		if (tw_chmod(file, "0755") != 0) {
 			LOGERR("Failed to chmod '%s'\n", file.c_str());
 			return false;
 		}
@@ -592,7 +726,7 @@ bool TWFunc::Fix_su_Perms(void) {
 			LOGERR("Failed to chown '%s'\n", file.c_str());
 			return false;
 		}
-		if (tw_chmod(file, "6755") != 0) {
+		if (tw_chmod(file, su_perms) != 0) {
 			LOGERR("Failed to chmod '%s'\n", file.c_str());
 			return false;
 		}
@@ -796,121 +930,6 @@ bool TWFunc::Install_SuperSU(void) {
 	return true;
 }
 
-int TWFunc::Get_File_Type(string fn) {
-	string::size_type i = 0;
-	int firstbyte = 0, secondbyte = 0;
-	char header[3];
-
-	ifstream f;
-	f.open(fn.c_str(), ios::in | ios::binary);
-	f.get(header, 3);
-	f.close();
-	firstbyte = header[i] & 0xff;
-	secondbyte = header[++i] & 0xff;
-
-	if (firstbyte == 0x1f && secondbyte == 0x8b)
-		return 1; // Compressed
-	else if (firstbyte == 0x4f && secondbyte == 0x41)
-		return 2; // Encrypted
-	else
-		return 0; // Unknown
-
-	return 0;
-}
-
-int TWFunc::Try_Decrypting_File(string fn, string password) {
-#ifndef TW_EXCLUDE_ENCRYPTED_BACKUPS
-	OAES_CTX * ctx = NULL;
-	uint8_t _key_data[32] = "";
-	FILE *f;
-	uint8_t buffer[4096];
-	uint8_t *buffer_out = NULL;
-	uint8_t *ptr = NULL;
-	size_t read_len = 0, out_len = 0;
-	int firstbyte = 0, secondbyte = 0, key_len;
-	size_t _j = 0;
-	size_t _key_data_len = 0;
-
-	// mostly kanged from OpenAES oaes.c
-	for( _j = 0; _j < 32; _j++ )
-		_key_data[_j] = _j + 1;
-	_key_data_len = password.size();
-	if( 16 >= _key_data_len )
-		_key_data_len = 16;
-	else if( 24 >= _key_data_len )
-		_key_data_len = 24;
-	else
-	_key_data_len = 32;
-	memcpy(_key_data, password.c_str(), password.size());
-
-	ctx = oaes_alloc();
-	if (ctx == NULL) {
-		LOGERR("Failed to allocate OAES\n");
-		return -1;
-	}
-
-	oaes_key_import_data(ctx, _key_data, _key_data_len);
-
-	f = fopen(fn.c_str(), "rb");
-	if (f == NULL) {
-		LOGERR("Failed to open '%s' to try decrypt\n", fn.c_str());
-		return -1;
-	}
-	read_len = fread(buffer, sizeof(uint8_t), 4096, f);
-	if (read_len <= 0) {
-		LOGERR("Read size during try decrypt failed\n");
-		fclose(f);
-		return -1;
-	}
-	if (oaes_decrypt(ctx, buffer, read_len, NULL, &out_len) != OAES_RET_SUCCESS) {
-		LOGERR("Error: Failed to retrieve required buffer size for trying decryption.\n");
-		fclose(f);
-		return -1;
-	}
-	buffer_out = (uint8_t *) calloc(out_len, sizeof(char));
-	if (buffer_out == NULL) {
-		LOGERR("Failed to allocate output buffer for try decrypt.\n");
-		fclose(f);
-		return -1;
-	}
-	if (oaes_decrypt(ctx, buffer, read_len, buffer_out, &out_len) != OAES_RET_SUCCESS) {
-		LOGERR("Failed to decrypt file '%s'\n", fn.c_str());
-		fclose(f);
-		free(buffer_out);
-		return 0;
-	}
-	fclose(f);
-	if (out_len < 2) {
-		LOGINFO("Successfully decrypted '%s' but read length %i too small.\n", fn.c_str(), out_len);
-		free(buffer_out);
-		return 1; // Decrypted successfully
-	}
-	ptr = buffer_out;
-	firstbyte = *ptr & 0xff;
-	ptr++;
-	secondbyte = *ptr & 0xff;
-	if (firstbyte == 0x1f && secondbyte == 0x8b) {
-		LOGINFO("Successfully decrypted '%s' and file is compressed.\n", fn.c_str());
-		free(buffer_out);
-		return 3; // Compressed
-	}
-	if (out_len >= 262) {
-		ptr = buffer_out + 257;
-		if (strncmp((char*)ptr, "ustar", 5) == 0) {
-			LOGINFO("Successfully decrypted '%s' and file is tar format.\n", fn.c_str());
-			free(buffer_out);
-			return 2; // Tar
-		}
-	}
-	free(buffer_out);
-	LOGINFO("No errors decrypting '%s' but no known file format.\n", fn.c_str());
-	return 1; // Decrypted successfully
-#else
-	LOGERR("Encrypted backup support not included.\n");
-	return -1;
-#endif
-}
-
 bool TWFunc::Try_Decrypting_Backup(string Restore_Path, string Password) {
 	DIR* d;
 
@@ -939,31 +958,6 @@ bool TWFunc::Try_Decrypting_Backup(string Restore_Path, string Password) {
 	return true;
 }
 
-int TWFunc::Wait_For_Child(pid_t pid, int *status, string Child_Name) {
-	pid_t rc_pid;
-
-	rc_pid = waitpid(pid, status, 0);
-	if (rc_pid > 0) {
-		if (WEXITSTATUS(*status) == 0)
-			LOGINFO("%s process ended with RC=%d\n", Child_Name.c_str(), WEXITSTATUS(*status)); // Success
-		else if (WIFSIGNALED(*status)) {
-			LOGINFO("%s process ended with signal: %d\n", Child_Name.c_str(), WTERMSIG(*status)); // Seg fault or some other non-graceful termination
-			return -1;
-		} else if (WEXITSTATUS(*status) != 0) {
-			LOGINFO("%s process ended with ERROR=%d\n", Child_Name.c_str(), WEXITSTATUS(*status)); // Graceful exit, but there was an error
-			return -1;
-		}
-	} else { // no PID returned
-		if (errno == ECHILD)
-			LOGINFO("%s no child process exist\n", Child_Name.c_str());
-		else {
-			LOGINFO("%s Unexpected error\n", Child_Name.c_str());
-			return -1;
-		}
-	}
-	return 0;
-}
-
 string TWFunc::Get_Current_Date() {
 	string Current_Date;
 	time_t seconds = time(0);
@@ -974,48 +968,149 @@ string TWFunc::Get_Current_Date() {
 	return Current_Date;
 }
 
-void TWFunc::Auto_Generate_Backup_Name() {
+string TWFunc::System_Property_Get(string Prop_Name) {
 	bool mount_state = PartitionManager.Is_Mounted_By_Path("/system");
 	std::vector<string> buildprop;
-	if (!PartitionManager.Mount_By_Path("/system", true)) {
-		DataManager::SetValue(TW_BACKUP_NAME, Get_Current_Date());
-		return;
-	}
+	string propvalue;
+	if (!PartitionManager.Mount_By_Path("/system", true))
+		return propvalue;
 	if (TWFunc::read_file("/system/build.prop", buildprop) != 0) {
-		LOGINFO("Unable to open /system/build.prop for getting backup name.\n");
+		LOGINFO("Unable to open /system/build.prop for getting '%s'.\n", Prop_Name.c_str());
 		DataManager::SetValue(TW_BACKUP_NAME, Get_Current_Date());
 		if (!mount_state)
 			PartitionManager.UnMount_By_Path("/system", false);
-		return;
+		return propvalue;
 	}
 	int line_count = buildprop.size();
 	int index;
 	size_t start_pos = 0, end_pos;
-	string propname, propvalue;
+	string propname;
 	for (index = 0; index < line_count; index++) {
 		end_pos = buildprop.at(index).find("=", start_pos);
 		propname = buildprop.at(index).substr(start_pos, end_pos);
-		if (propname == "ro.build.display.id") {
+		if (propname == Prop_Name) {
 			propvalue = buildprop.at(index).substr(end_pos + 1, buildprop.at(index).size());
-			string Backup_Name = Get_Current_Date();
-			Backup_Name += " " + propvalue;
-			if (Backup_Name.size() > MAX_BACKUP_NAME_LEN)
-				Backup_Name.resize(MAX_BACKUP_NAME_LEN);
-			// Trailing spaces cause problems on some file systems, so remove them
-			string space_check, space = " ";
-			space_check = Backup_Name.substr(Backup_Name.size() - 1, 1);
-			while (space_check == space) {
-				Backup_Name.resize(Backup_Name.size() - 1);
-				space_check = Backup_Name.substr(Backup_Name.size() - 1, 1);
-			}
-			DataManager::SetValue(TW_BACKUP_NAME, Backup_Name);
-			break;
+			if (!mount_state)
+				PartitionManager.UnMount_By_Path("/system", false);
+			return propvalue;
 		}
-	}
-	if (propvalue.empty()) {
-		LOGINFO("ro.build.display.id not found in build.prop\n");
-		DataManager::SetValue(TW_BACKUP_NAME, Get_Current_Date());
 	}
 	if (!mount_state)
 		PartitionManager.UnMount_By_Path("/system", false);
+	return propvalue;
 }
+
+void TWFunc::Auto_Generate_Backup_Name() {
+	string propvalue = System_Property_Get("ro.build.display.id");
+	if (propvalue.empty()) {
+		DataManager::SetValue(TW_BACKUP_NAME, Get_Current_Date());
+		return;
+	}
+	string Backup_Name = Get_Current_Date();
+	Backup_Name += " " + propvalue;
+	if (Backup_Name.size() > MAX_BACKUP_NAME_LEN)
+		Backup_Name.resize(MAX_BACKUP_NAME_LEN);
+	// Trailing spaces cause problems on some file systems, so remove them
+	string space_check, space = " ";
+	space_check = Backup_Name.substr(Backup_Name.size() - 1, 1);
+	while (space_check == space) {
+		Backup_Name.resize(Backup_Name.size() - 1);
+		space_check = Backup_Name.substr(Backup_Name.size() - 1, 1);
+	}
+	DataManager::SetValue(TW_BACKUP_NAME, Backup_Name);
+}
+
+void TWFunc::Fixup_Time_On_Boot()
+{
+#ifdef QCOM_RTC_FIX
+	// Devices with Qualcomm Snapdragon 800 do some shenanigans with RTC.
+	// They never set it, it just ticks forward from 1970-01-01 00:00,
+	// and then they have files /data/system/time/ats_* with 64bit offset
+	// in miliseconds which, when added to the RTC, gives the correct time.
+	// So, the time is: (offset_from_ats + value_from_RTC)
+	// There are multiple ats files, they are for different systems? Bases?
+	// Like, ats_1 is for modem and ats_2 is for TOD (time of day?).
+	// Look at file time_genoff.h in CodeAurora, qcom-opensource/time-services
+
+	static const char *paths[] = { "/data/system/time/", "/data/time/"  };
+
+	DIR *d;
+	FILE *f;
+	uint64_t offset = 0;
+	struct timeval tv;
+	struct dirent *dt;
+	std::string ats_path;
+
+
+	// Don't fix the time of it already is over year 2000, it is likely already okay, either
+	// because the RTC is fine or because the recovery already set it and then crashed
+	gettimeofday(&tv, NULL);
+	if(tv.tv_sec > 946684800) // timestamp of 2000-01-01 00:00:00
+	{
+		LOGINFO("TWFunc::Fixup_Time: not fixing time, it seems to be already okay (after year 2000).\n");
+		return;
+	}
+
+	if(!PartitionManager.Mount_By_Path("/data", false))
+		return;
+
+	// Prefer ats_2, it seems to be the one we want according to logcat on hammerhead
+	// - it is the one for ATS_TOD (time of day?).
+	// However, I never saw a device where the offset differs between ats files.
+	for(size_t i = 0; i < (sizeof(paths)/sizeof(paths[0])); ++i)
+	{
+		DIR *d = opendir(paths[i]);
+		if(!d)
+			continue;
+
+		while((dt = readdir(d)))
+		{
+			if(dt->d_type != DT_REG || strncmp(dt->d_name, "ats_", 4) != 0)
+				continue;
+
+			if(ats_path.empty() || strcmp(dt->d_name, "ats_2") == 0)
+				ats_path = std::string(paths[i]).append(dt->d_name);
+		}
+
+		closedir(d);
+	}
+
+	if(ats_path.empty())
+	{
+		LOGERR("TWFunc::Fixup_Time: no ats files found, leaving time as-is!\n");
+		return;
+	}
+
+	f = fopen(ats_path.c_str(), "r");
+	if(!f)
+	{
+		LOGERR("TWFunc::Fixup_Time: failed to open file %s\n", ats_path.c_str());
+		return;
+	}
+
+	if(fread(&offset, sizeof(offset), 1, f) != 1)
+	{
+		LOGERR("TWFunc::Fixup_Time: failed load uint64 from file %s\n", ats_path.c_str());
+		fclose(f);
+		return;
+	}
+	fclose(f);
+
+	LOGINFO("TWFunc::Fixup_Time: Setting time offset from file %s, offset %llu\n", ats_path.c_str(), offset);
+
+	gettimeofday(&tv, NULL);
+
+	tv.tv_sec += offset/1000;
+	tv.tv_usec += (offset%1000)*1000;
+
+	while(tv.tv_usec >= 1000000)
+	{
+		++tv.tv_sec;
+		tv.tv_usec -= 1000000;
+	}
+
+	settimeofday(&tv, NULL);
+#endif
+}
+
+#endif // ndef BUILD_TWRPTAR_MAIN

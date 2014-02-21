@@ -265,6 +265,13 @@ ifneq ($(TW_EXCLUDE_ENCRYPTED_BACKUPS), true)
 else
     LOCAL_CFLAGS += -DTW_EXCLUDE_ENCRYPTED_BACKUPS
 endif
+ifeq ($(TARGET_RECOVERY_QCOM_RTC_FIX),)
+  ifeq ($(TARGET_CPU_VARIANT),krait)
+    LOCAL_CFLAGS += -DQCOM_RTC_FIX
+  endif
+else ifeq ($(TARGET_RECOVERY_QCOM_RTC_FIX),true)
+    LOCAL_CFLAGS += -DQCOM_RTC_FIX
+endif
 
 include $(BUILD_EXECUTABLE)
 
@@ -346,7 +353,8 @@ include $(commands_recovery_local_path)/injecttwrp/Android.mk \
     $(commands_recovery_local_path)/minuitwrp/Android.mk \
     $(commands_recovery_local_path)/openaes/Android.mk \
     $(commands_recovery_local_path)/toolbox/Android.mk \
-    $(commands_recovery_local_path)/libmincrypt/Android.mk
+    $(commands_recovery_local_path)/libmincrypt/Android.mk \
+    $(commands_recovery_local_path)/twrpTarMain/Android.mk
 
 ifeq ($(TW_INCLUDE_CRYPTO_SAMSUNG), true)
     include $(commands_recovery_local_path)/crypto/libcrypt_samsung/Android.mk

@@ -47,7 +47,7 @@ extern "C" {
 #include "../data.hpp"
 
 GUIInput::GUIInput(xml_node<>* node)
-	: Conditional(node)
+	: GUIObject(node)
 {
 	xml_attribute<>* attr;
 	xml_node<>* child;
@@ -216,7 +216,6 @@ GUIInput::~GUIInput()
 	if (mInputText)	 	delete mInputText;
 	if (mBackground)	delete mBackground;
 	if (mCursor)		delete mCursor;
-	if (mFont)			delete mFont;
 	if (mAction)		delete mAction;
 }
 
@@ -592,8 +591,10 @@ int GUIInput::NotifyTouch(TOUCH_STATE state, int x, int y)
 	return 0;
 }
 
-int GUIInput::NotifyVarChange(std::string varName, std::string value)
+int GUIInput::NotifyVarChange(const std::string& varName, const std::string& value)
 {
+	GUIObject::NotifyVarChange(varName, value);
+
 	if (varName == mVariable && !isLocalChange) {
 		HandleTextLocation(-1003);
 		return 0;
