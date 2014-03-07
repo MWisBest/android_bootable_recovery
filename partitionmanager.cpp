@@ -1383,9 +1383,9 @@ int TWPartitionManager::Decrypt_Device(string Password) {
 	property_set("ro.crypto.keyfile.userdata", CRYPTO_KEY_LOC);
 
 #ifdef CRYPTO_SD_FS_TYPE
-    property_set("ro.crypto.sd_fs_type", CRYPTO_SD_FS_TYPE);
-    property_set("ro.crypto.sd_fs_real_blkdev", CRYPTO_SD_REAL_BLKDEV);
-    property_set("ro.crypto.sd_fs_mnt_point", EXPAND(TW_INTERNAL_STORAGE_PATH));
+	property_set("ro.crypto.sd_fs_type", CRYPTO_SD_FS_TYPE);
+	property_set("ro.crypto.sd_fs_real_blkdev", CRYPTO_SD_REAL_BLKDEV);
+	property_set("ro.crypto.sd_fs_mnt_point", EXPAND(TW_INTERNAL_STORAGE_PATH));
 #endif
 
     property_set("rw.km_fips_status", "ready");
@@ -1829,7 +1829,7 @@ void TWPartitionManager::Get_Partition_List(string ListType, std::vector<Partiti
 			while (end_pos != string::npos && start_pos < Restore_List.size()) {
 				restore_path = Restore_List.substr(start_pos, end_pos - start_pos);
 				if ((restore_part = Find_Partition_By_Path(restore_path)) != NULL) {
-					if (restore_part->Backup_Name == "recovery" && !restore_part->Can_Be_Backed_Up || restore_part->Is_SubPartition) {
+					if ((restore_part->Backup_Name == "recovery" && !restore_part->Can_Be_Backed_Up) || restore_part->Is_SubPartition) {
 						// Don't allow restore of recovery (causes problems on some devices)
 						// Don't add subpartitions to the list of items
 					} else {
