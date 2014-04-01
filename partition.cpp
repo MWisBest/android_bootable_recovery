@@ -1618,11 +1618,7 @@ bool TWPartition::Backup_Tar(string backup_folder) {
 
 	DataManager::GetValue(TW_USE_COMPRESSION_VAR, use_compression);
 	tar.use_compression = use_compression;
-	//exclude Google Music Cache
-	vector<string> excludedirs = du.get_absolute_dirs();
-	for (int i = 0; i < excludedirs.size(); ++i) {
-		tar.setexcl(excludedirs.at(i));
-	}
+
 #ifndef TW_EXCLUDE_ENCRYPTED_BACKUPS
 	DataManager::GetValue("tw_encrypt_backup", use_encryption);
 	if (use_encryption && Can_Encrypt_Backup) {
@@ -1822,9 +1818,7 @@ bool TWPartition::Update_Size(bool Display_Error) {
 	if (Has_Data_Media) {
 		if (Mount(Display_Error)) {
 			unsigned long long data_media_used, actual_data;
-			du.add_relative_dir("media");
 			Used = du.Get_Folder_Size("/data");
-			du.clear_relative_dir("media");
 			Backup_Size = Used;
 			int bak = (int)(Used / 1048576LLU);
 			int fre = (int)(Free / 1048576LLU);
