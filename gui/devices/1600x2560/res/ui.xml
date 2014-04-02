@@ -1415,7 +1415,10 @@
 				<placement x="%col2_x%" y="%backup_button_row1%" w="%button_fill_main_width%" h="%button_fill_quarter_height%" />
 				<font resource="font" color="%button_text_color%" />
 				<text>Refresh Sizes</text>
-				<action function="refreshsizes"></action>
+				<actions>
+					<action function="refreshsizes"></action>
+					<action function="page">backup</action>
+				</actions>
 			</object>
 
 			<object type="button">
@@ -2532,6 +2535,7 @@
 				<listitem name="(UTC +5) Yekaterinburg, Islamabad">PAKST-5;PAKDT</listitem>
 				<listitem name="(UTC +6) Almaty, Dhaka, Colombo">TASHST-6;TASHDT</listitem>
 				<listitem name="(UTC +7) Bangkok, Hanoi, Jakarta">THAIST-7;THAIDT</listitem>
+
 				<listitem name="(UTC +8) Beijing, Singapore, Hong Kong">TAIST-8;TAIDT</listitem>
 				<listitem name="(UTC +9) Tokyo, Seoul, Yakutsk">JST-9;JSTDT</listitem>
 				<listitem name="(UTC +10) Eastern Australia, Guam">EET-10;EETDT</listitem>
