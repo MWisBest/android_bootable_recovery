@@ -75,6 +75,12 @@ ifneq ($(wildcard system/core/libsparse/Android.mk),)
 LOCAL_SHARED_LIBRARIES += libsparse
 endif
 
+ifeq ($(TW_OEM_BUILD),true)
+    LOCAL_CFLAGS += -DTW_OEM_BUILD
+    BOARD_HAS_NO_REAL_SDCARD := true
+    TW_USE_TOOLBOX := true
+    TW_EXCLUDE_SUPERSU := true
+endif
 ifeq ($(TARGET_USERIMAGES_USE_EXT4), true)
     LOCAL_CFLAGS += -DUSE_EXT4
     LOCAL_C_INCLUDES += system/extras/ext4_utils
@@ -281,6 +287,7 @@ endif
 
 include $(BUILD_EXECUTABLE)
 
+ifneq ($(TW_USE_TOOLBOX), true)
 include $(CLEAR_VARS)
 # Create busybox symlinks... gzip and gunzip are excluded because those need to link to pigz instead
 BUSYBOX_LINKS := $(shell cat external/busybox/busybox-full.links)
@@ -298,6 +305,7 @@ $(RECOVERY_BUSYBOX_SYMLINKS): $(LOCAL_INSTALLED_MODULE)
 	$(hide) ln -sf $(BUSYBOX_BINARY) $@
 
 ALL_DEFAULT_INSTALLED_MODULES += $(RECOVERY_BUSYBOX_SYMLINKS)
+endif
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := verifier_test

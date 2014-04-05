@@ -294,6 +294,7 @@ int DataManager::Flush()
 
 int DataManager::SaveValues()
 {
+#ifndef TW_OEM_BUILD
 	if (mBackingFile.empty())
 		return -1;
 
@@ -322,6 +323,7 @@ int DataManager::SaveValues()
 		}
 	}
 	fclose(out);
+#endif // ifdef TW_OEM_BUILD
 	return 0;
 }
 
@@ -1078,6 +1080,7 @@ void DataManager::Output_Version(void)
 
 void DataManager::ReadSettingsFile(void)
 {
+#ifndef TW_OEM_BUILD
 	// Load up the values for TWRP - Sleep to let the card be ready
 	char mkdir_path[255], settings_file[255];
 	int is_enc, has_dual, use_ext, has_data_media, has_ext;
@@ -1106,27 +1109,8 @@ void DataManager::ReadSettingsFile(void)
 	LOGINFO("Attempt to load settings from settings file...\n");
 	LoadValues(settings_file);
 	Output_Version();
-	GetValue(TW_HAS_DUAL_STORAGE, has_dual);
-	GetValue(TW_USE_EXTERNAL_STORAGE, use_ext);
-	GetValue(TW_HAS_EXTERNAL, has_ext);
-	if (has_dual != 0 && use_ext == 1) {
-		// Attempt to switch to using external storage
-		if (!PartitionManager.Mount_Current_Storage(false)) {
-			LOGERR("Failed to mount external storage, using internal storage.\n");
-			// Remount failed, default back to internal storage
-			SetValue(TW_USE_EXTERNAL_STORAGE, 0);
-			PartitionManager.Mount_Current_Storage(true);
-		}
-	} else {
-		PartitionManager.Mount_Current_Storage(true);
-	}
-
-	if (has_ext) {
-		string ext_path;
-
-		GetValue(TW_EXTERNAL_PATH, ext_path);
-		PartitionManager.Mount_By_Path(ext_path, 0);
-	}
+#endif // ifdef TW_OEM_BUILD
+	PartitionManager.Mount_All_Storage();
 	update_tz_environment_variables();
 #ifdef TW_MAX_BRIGHTNESS
 	if (strcmp(EXPAND(TW_BRIGHTNESS_PATH), "/nobrightness") != 0) {
