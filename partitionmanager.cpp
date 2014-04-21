@@ -57,6 +57,7 @@ int TWPartitionManager::Process_Fstab(string Fstab_Filename, bool Display_Error)
 	FILE *fstabFile;
 	char fstab_line[MAX_FSTAB_LINE_LENGTH];
 	TWPartition* settings_partition = NULL;
+	TWPartition* andsec_partition = NULL;
 
 	fstabFile = fopen(Fstab_Filename.c_str(), "rt");
 	if (fstabFile == NULL) {
@@ -76,10 +77,15 @@ int TWPartitionManager::Process_Fstab(string Fstab_Filename, bool Display_Error)
 		memset(fstab_line, 0, sizeof(fstab_line));
 
 		if (partition->Process_Fstab_Line(line, Display_Error)) {
-			if (!settings_partition && partition->Is_Settings_Storage) {
+			if (!settings_partition && partition->Is_Settings_Storage && partition->Is_Present) {
 				settings_partition = partition;
 			} else {
 				partition->Is_Settings_Storage = false;
+			}
+			if (!andsec_partition && partition->Has_Android_Secure && partition->Is_Present) {
+				andsec_partition = partition;
+			} else {
+				partition->Has_Android_Secure = false;
 			}
 			Partitions.push_back(partition);
 		} else {
@@ -104,7 +110,15 @@ int TWPartitionManager::Process_Fstab(string Fstab_Filename, bool Display_Error)
 		else
 			LOGINFO("Error creating fstab\n");
 	}
-	Setup_Settings_Storage_Partition(settings_partition);
+
+	if (andsec_partition) {
+		Setup_Android_Secure_Location(andsec_partition);
+	} else if (settings_partition) {
+		Setup_Android_Secure_Location(settings_partition);
+	}
+	if (settings_partition) {
+		Setup_Settings_Storage_Partition(settings_partition);
+	}
 	Update_System_Details();
 	UnMount_Main_Partitions();
 	return true;
@@ -139,12 +153,18 @@ int TWPartitionManager::Write_Fstab(void) {
 }
 
 void TWPartitionManager::Setup_Settings_Storage_Partition(TWPartition* Part) {
-#ifndef RECOVERY_SDCARD_ON_DATA
-	Part->Setup_AndSec();
-#endif
 	DataManager::SetValue("tw_settings_path", Part->Storage_Path);
 	DataManager::SetValue("tw_storage_path", Part->Storage_Path);
 	LOGINFO("Settings storage is '%s'\n", Part->Storage_Path.c_str());
+}
+
+void TWPartitionManager::Setup_Android_Secure_Location(TWPartition* Part) {
+	if (Part->Has_Android_Secure)
+		Part->Setup_AndSec();
+#ifndef RECOVERY_SDCARD_ON_DATA
+	else
+		Part->Setup_AndSec();
+#endif
 }
 
 void TWPartitionManager::Output_Partition_Logging(void) {

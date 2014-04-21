@@ -45,6 +45,7 @@
 #ifndef TW_NO_SCREEN_TIMEOUT
 #include "gui/blanktimer.hpp"
 #endif
+#include "find_file.hpp"
 
 #ifdef TW_USE_MODEL_HARDWARE_ID_FOR_DEVICE_ID
 	#include "cutils/properties.h"
@@ -278,9 +279,10 @@ int DataManager::LoadValues(const string filename)
 error:
 	fclose(in);
 	string current = GetCurrentStoragePath();
-	string settings = GetSettingsStoragePath();
-	if (current != settings && !PartitionManager.Mount_By_Path(current, false)) {
-		SetValue("tw_storage_path", settings);
+	TWPartition* Part = PartitionManager.Find_Partition_By_Path(current);
+	if (current != Part->Storage_Path && Part->Mount(false)) {
+		LOGINFO("LoadValues setting storage path to '%s'\n", Part->Storage_Path.c_str());
+		SetValue("tw_storage_path", Part->Storage_Path);
 	} else {
 		SetBackupFolder();
 	}
@@ -940,17 +942,32 @@ void DataManager::SetDefaultValues()
 #ifndef TW_MAX_BRIGHTNESS
 #define TW_MAX_BRIGHTNESS 255
 #endif
+	string findbright;
 	if (strcmp(EXPAND(TW_BRIGHTNESS_PATH), "/nobrightness") != 0) {
-		LOGINFO("TW_BRIGHTNESS_PATH := %s\n", EXPAND(TW_BRIGHTNESS_PATH));
+		findbright = EXPAND(TW_BRIGHTNESS_PATH);
+		LOGINFO("TW_BRIGHTNESS_PATH := %s\n", findbright.c_str());
+		if (!TWFunc::Path_Exists(findbright)) {
+			LOGINFO("Specified brightness file '%s' not found.\n", findbright.c_str());
+			findbright = "";
+		}
+	}
+	if (findbright.empty()) {
+		// Attempt to locate the brightness file
+		findbright = Find_File::Find("brightness", "/sys/class/backlight");
+		if (findbright.empty()) findbright = Find_File::Find("brightness", "/sys/class/leds/lcd-backlight");
+	}
+	if (findbright.empty()) {
+		LOGINFO("Unable to locate brightness file\n");
+		mConstValues.insert(make_pair("tw_has_brightnesss_file", "0"));
+	} else {
+		LOGINFO("Found brightness file at '%s'\n", findbright.c_str());
 		mConstValues.insert(make_pair("tw_has_brightnesss_file", "1"));
-		mConstValues.insert(make_pair("tw_brightness_file", EXPAND(TW_BRIGHTNESS_PATH)));
+		mConstValues.insert(make_pair("tw_brightness_file", findbright));
 		ostringstream maxVal;
 		maxVal << TW_MAX_BRIGHTNESS;
 		mConstValues.insert(make_pair("tw_brightness_max", maxVal.str()));
 		mValues.insert(make_pair("tw_brightness", make_pair(maxVal.str(), 1)));
 		mValues.insert(make_pair("tw_brightness_pct", make_pair("100", 1)));
-	} else {
-		mConstValues.insert(make_pair("tw_has_brightnesss_file", "0"));
 	}
 #endif
 	mValues.insert(make_pair(TW_MILITARY_TIME, make_pair("0", 1)));

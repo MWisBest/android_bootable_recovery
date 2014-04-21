@@ -252,7 +252,7 @@ static int Run_Update_Binary(const char *path, ZipArchive *Zip, int* wipe_cache)
 }
 
 extern "C" int TWinstall_zip(const char* path, int* wipe_cache) {
-	int ret_val, zip_verify, md5_return, key_count;
+	int ret_val, zip_verify = 1, md5_return, key_count;
 	twrpDigest md5sum;
 	string strpath = path;
 	ZipArchive Zip;
@@ -260,16 +260,14 @@ extern "C" int TWinstall_zip(const char* path, int* wipe_cache) {
 	gui_print("Installing '%s'...\nChecking for MD5 file...\n", path);
 	md5sum.setfn(strpath);
 	md5_return = md5sum.verify_md5digest();
-	if (md5_return == -2) {
-		// MD5 did not match.
-		LOGERR("Zip MD5 does not match.\nUnable to install zip.\n");
+	if (md5_return == -2) { // md5 did not match
+		LOGERR("Aborting zip install\n");
 		return INSTALL_CORRUPT;
-	} else if (md5_return == -1) {
-		gui_print("Skipping MD5 check: no MD5 file found.\n");
-	} else if (md5_return == 0)
-		gui_print("Zip MD5 matched.\n"); // MD5 found and matched.
+	}
 
+#ifndef TW_OEM_BUILD
 	DataManager::GetValue(TW_SIGNED_ZIP_VERIFY_VAR, zip_verify);
+#endif
 	DataManager::SetProgress(0);
 	if (zip_verify) {
 		gui_print("Verifying zip signature...\n");

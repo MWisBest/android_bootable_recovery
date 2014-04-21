@@ -1,5 +1,5 @@
 /*
-        Copyright 2012 bigbiff/Dees_Troy TeamWin
+        Copyright 2014 TeamWin
         This file is part of TWRP/TeamWin Recovery Project.
 
         TWRP is free software: you can redistribute it and/or modify
@@ -16,23 +16,22 @@
         along with TWRP.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-extern "C" {
-	#include "digest/md5.h"
-}
+#ifndef Find_File_HPP
+#define Find_File_HPP
+
+#include <string>
+#include <vector>
 
 using namespace std;
 
-class twrpDigest
-{
-public:
-	void setfn(string fn);
-	int computeMD5(void);
-	int verify_md5digest(void);
-	int write_md5digest(void);
+class Find_File {
 
+public:
+	static string Find(const string& file_name, const string& start_path);
 private:
-	int read_md5digest(void);
-	string md5fn;
-	string line;
-	unsigned char md5sum[MD5LENGTH];
+	Find_File();
+	string Find_Internal(const string& filename, const string& starting_path);
+	vector<string> searched_dirs;
 };
+
+#endif
