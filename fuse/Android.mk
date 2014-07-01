@@ -40,7 +40,8 @@ LOCAL_SHARED_LIBRARIES := \
 
 LOCAL_CFLAGS := \
 	-D_FILE_OFFSET_BITS=64 \
-	-DFUSE_USE_VERSION=26
+	-DFUSE_USE_VERSION=26 \
+	-fno-strict-aliasing
 
 ifneq ($(DEBUG_FORCE_STRICT_ALIASING),true)
 	LOCAL_CFLAGS += -fno-strict-aliasing
@@ -66,5 +67,8 @@ LOCAL_MODULE := fusexmp
 LOCAL_MODULE_TAGS := optional
 
 LOCAL_STATIC_LIBRARIES := libfusetwrp
+
+LOCAL_SHARED_LIBRARIES := \
+	libutils libdl
 
 include $(BUILD_EXECUTABLE)
