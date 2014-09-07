@@ -40,8 +40,7 @@ LOCAL_SHARED_LIBRARIES := \
 
 LOCAL_CFLAGS := \
 	-D_FILE_OFFSET_BITS=64 \
-	-DFUSE_USE_VERSION=26 \
-	-fno-strict-aliasing
+	-DFUSE_USE_VERSION=26
 
 ifneq ($(DEBUG_FORCE_STRICT_ALIASING),true)
 	LOCAL_CFLAGS += -fno-strict-aliasing
