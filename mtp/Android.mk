@@ -30,6 +30,11 @@ LOCAL_SRC_FILES = \
     mtp_MtpDatabase.cpp \
     node.cpp
 LOCAL_SHARED_LIBRARIES += libz libc libusbhost libstdc++ libstlport libdl libcutils libutils
+
+ifneq ($(DEBUG_FORCE_STRICT_ALASING),true)
+	LOCAL_CFLAGS += -fno-strict-aliasing
+endif
+
 include $(BUILD_SHARED_LIBRARY)
 
 # Build twrpmtp binary / executable
@@ -62,4 +67,9 @@ LOCAL_SRC_FILES = \
     mtp_MtpDatabase.cpp \
     node.cpp
 LOCAL_SHARED_LIBRARIES += libz libc libusbhost libstdc++ libstlport libdl libcutils libutils
+
+ifneq ($(DEBUG_FORCE_STRICT_ALASING),true)
+	LOCAL_CFLAGS += -fno-strict-aliasing
+endif
+
 include $(BUILD_EXECUTABLE)
