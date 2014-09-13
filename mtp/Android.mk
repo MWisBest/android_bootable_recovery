@@ -35,6 +35,10 @@ ifneq ($(DEBUG_FORCE_STRICT_ALASING),true)
 	LOCAL_CFLAGS += -fno-strict-aliasing
 endif
 
+ifneq ($(TW_MTP_DEVICE),)
+	LOCAL_CFLAGS += -DUSB_MTP_DEVICE=$(TW_MTP_DEVICE)
+endif
+
 include $(BUILD_SHARED_LIBRARY)
 
 # Build twrpmtp binary / executable
