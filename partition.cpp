@@ -864,7 +864,7 @@ bool TWPartition::Find_Partition_Size(void) {
 			char label[32], device[32];
 			unsigned long size = 0;
 
-			sscanf(line, "%s %lx %*lx %*lu %s", label, &size, device);
+			sscanf(line, "%s %lx %*x %*u %s", label, &size, device);
 
 			// Skip header, annotation	and blank lines
 			if ((strncmp(device, "/dev/", 5) != 0) || (strlen(line) < 8))
@@ -1391,13 +1391,13 @@ string TWPartition::Get_Restore_File_System(string restore_folder) {
 	first_period = Backup_FileName.find(".");
 	if (first_period == string::npos) {
 		LOGERR("Unable to find file system (first period).\n");
-		return false;
+		return string();
 	}
 	Restore_File_System = Backup_FileName.substr(first_period + 1, Backup_FileName.size() - first_period - 1);
 	second_period = Restore_File_System.find(".");
 	if (second_period == string::npos) {
 		LOGERR("Unable to find file system (second period).\n");
-		return false;
+		return string();
 	}
 	Restore_File_System.resize(second_period);
 	LOGINFO("Restore file system is: '%s'.\n", Restore_File_System.c_str());
@@ -1732,10 +1732,6 @@ bool TWPartition::Wipe_Data_Without_Wiping_Media() {
 			}
 		}
 		closedir(d);
-
-		#ifdef HAVE_SELINUX
-		perms.fixDataInternalContexts();
-		#endif
 
 		gui_print("Done.\n");
 		return true;
@@ -2076,9 +2072,9 @@ void TWPartition::Recreate_Media_Folder(void) {
 		PartitionManager.Mount_By_Path(Symlink_Mount_Point, true);
 		LOGINFO("Recreating /data/media folder.\n");
 		mkdir("/data/media", S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
-		#ifdef HAVE_SELINUX
+#ifdef HAVE_SELINUX
 		perms.fixDataInternalContexts();
-		#endif
+#endif
 		// Toggle mount to ensure that "internal sdcard" gets mounted
 		PartitionManager.UnMount_By_Path(Symlink_Mount_Point, true);
 		PartitionManager.Mount_By_Path(Symlink_Mount_Point, true);
